@@ -21,10 +21,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build Web Application
         run: npm run build
@@ -38,10 +37,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Initialize Capacitor Android
+      - name: Install Capacitor Core & Android
         run: |
-          npm install @capacitor/core @capacitor/android @capacitor/cli
-          npx cap add android || true
+          npm install --save @capacitor/core @capacitor/android
+          npm install --save-dev @capacitor/cli
+          npx cap init "NAVIGASI LAUT SR" "com.navigasilaut.sr" --web-dir dist
+          npx cap add android
+
+      - name: Configure Android Permissions in AndroidManifest.xml
+        run: |
+          # Inject fine location, coarse location, internet, and audio permissions
+          MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
+          sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />' "$MANIFEST_PATH"
+
+      - name: Sync Web Build to Native Android
+        run: |
           npx cap sync android
 
       - name: Grant Execute Permission for Gradlew
@@ -52,28 +62,30 @@ jobs:
       - name: Build Android APK (Debug / Standalone)
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Rename APK Output
+      - name: Copy and Rename APK Output
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk ./NavigasiLautSR-v1.0.0.apk
+          mkdir -p release-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/NavigasiLautSR-v1.0.0.apk
+          ls -lh release-apk/NavigasiLautSR-v1.0.0.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: NavigasiLautSR-Android-APK
-          path: NavigasiLautSR-v1.0.0.apk
+          path: release-apk/NavigasiLautSR-v1.0.0.apk
           if-no-files-found: error
 
       - name: Create GitHub Release with APK Download
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0-build-${{ github.run_number }}
-          name: "NAVIGASI LAUT SR - Unduh APK v1.0.0 (${{ github.run_number }})"
+          tag_name: v1.0.0-release-${{ github.run_number }}
+          name: "NAVIGASI LAUT SR - Unduh APK Nelayan v1.0.0"
           body: |
-            ## 🚢 NAVIGASI LAUT SR - APK Android Nelayan
+            ## 🚢 NAVIGASI LAUT SR - APK Android Siap Pasang
 
-            Aplikasi navigasi maritim offline khusus nelayan wilayah Sulawesi, Nusa Tenggara, dan perairan sekitarnya.
+            Aplikasi navigasi maritim offline khusus nelayan wilayah perairan Sulawesi, Nusa Tenggara, dan sekitarnya.
 
             ### 📥 Tautan Unduh Berkas APK:
             Unduh file **NavigasiLautSR-v1.0.0.apk** di bawah ini dan pasang pada HP Android Anda.
@@ -84,8 +96,8 @@ jobs:
             - **Explorer Mode:** HUD kontras tinggi layar penuh dengan angka besar yang terbaca di bawah terik matahari laut.
             - **Titik Saya:** Tandai rumpon, karang dangkal, pelabuhan, dan spot ikan dengan foto kamera & koordinat DD/DMS.
             - **Cuaca Laut Maritim:** Tinggi & arah gelombang, kecepatan angin, suhu air laut, dan prakiraan 3 hari tersimpan offline.
-            - **Panduan Suara Nelayan:** Koreksi arah haluan kapal otomatis dalam Bahasa Indonesia.
+            - **Panduan Suara Kemudi Nelayan:** Koreksi arah haluan kapal otomatis dalam Bahasa Indonesia.
             - **Berbagi Lokasi Tanpa Server:** Ekspor & impor file GPX 1.1, GeoJSON, dan JSON.
-          files: NavigasiLautSR-v1.0.0.apk
+          files: release-apk/NavigasiLautSR-v1.0.0.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
