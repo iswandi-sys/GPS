@@ -34,9 +34,6 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Capacitor Core & Android
         run: |
           npm install --save @capacitor/core @capacitor/android
@@ -46,7 +43,6 @@ jobs:
 
       - name: Configure Android Permissions in AndroidManifest.xml
         run: |
-          # Inject fine location, coarse location, internet, and audio permissions
           MANIFEST_PATH="android/app/src/main/AndroidManifest.xml"
           sed -i '/<application/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />' "$MANIFEST_PATH"
 
@@ -54,14 +50,10 @@ jobs:
         run: |
           npx cap sync android
 
-      - name: Grant Execute Permission for Gradlew
+      - name: Build Android APK with Gradle
         run: |
           cd android
           chmod +x gradlew
-
-      - name: Build Android APK (Debug / Standalone)
-        run: |
-          cd android
           ./gradlew assembleDebug --no-daemon
 
       - name: Copy and Rename APK Output
