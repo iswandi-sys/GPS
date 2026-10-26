@@ -10,13 +10,13 @@ import {
 import { createOfflineTileLayer } from '../services/OfflineTileLayer';
 import { CATEGORY_INFO } from './MarineIcons';
 import {
-  Crosshair,
   Volume2,
   VolumeX,
   Compass,
   Layers,
   MapPin,
   Maximize2,
+  Minimize2,
   Anchor,
   Navigation,
   AlertTriangle,
@@ -24,11 +24,14 @@ import {
   Plus,
   Play,
   Square,
-  Ship,
-  Flag,
+  X,
+  CheckCircle,
+  ArrowLeft,
+  ArrowRight,
+  Crosshair,
 } from 'lucide-react';
 import { formatCoordinates } from '../services/CoordinateConverter';
-import { formatSpeed, formatDistance } from '../services/NavigationEngine';
+import { formatSpeed, formatDistance, calculateDistanceMeters } from '../services/NavigationEngine';
 
 interface NavigationMapProps {
   position: NavPosition | null;
@@ -39,9 +42,10 @@ interface NavigationMapProps {
   settings: AppSettings;
   isSailingMode: boolean;
   tripDistanceNmi: number;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
   onToggleSailingMode: () => void;
   onSelectTarget: (wp: Waypoint | null) => void;
-  onOpenExplorerMode: () => void;
   onToggleVoice: () => void;
   onQuickAddWaypoint: () => void;
   onManualAddWaypoint: (initialCoord?: { lat: number; lng: number }) => void;
@@ -57,9 +61,10 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
   settings,
   isSailingMode,
   tripDistanceNmi,
+  isFullscreen,
+  onToggleFullscreen,
   onToggleSailingMode,
   onSelectTarget,
-  onOpenExplorerMode,
   onToggleVoice,
   onQuickAddWaypoint,
   onManualAddWaypoint,
@@ -73,6 +78,8 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
   const targetLineRef = useRef<L.Polyline | null>(null);
   const waypointMarkersRef = useRef<L.LayerGroup | null>(null);
   const accuracyCircleRef = useRef<L.Circle | null>(null);
+  const clickedMarkerRef = useRef<L.Marker | null>(null);
+  const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [followShip, setFollowShip] = useState<boolean>(true);
   const [activeLayer, setActiveLayer] = useState<'street' | 'satellite' | 'ocean'>('satellite');
@@ -80,11 +87,14 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
   const [showSeamarks, setShowSeamarks] = useState<boolean>(settings.showSeamarks);
   const [showBathymetry, setShowBathymetry] = useState<boolean>(settings.showBathymetry);
 
+  // Single-click on map context card state
+  const [clickedCoord, setClickedCoord] = useState<{ lat: number; lng: number } | null>(null);
+
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Default center: Perairan Sulawesi (Makassar Strait / Flores Sea)
+    // Default center: Perairan Sulawesi & Nusa Tenggara
     const initialLat = position ? position.lat : -5.14;
     const initialLng = position ? position.lng : 119.41;
 
@@ -93,7 +103,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       zoom: 12,
       zoomControl: false,
       attributionControl: false,
-      doubleClickZoom: false, // Disable default zoom on dblclick to allow "Ketuk Dua Kali untuk Tambah Titik"
+      doubleClickZoom: false, // Prevent zoom on dblclick
     });
 
     // 1. Street Layer (Offline-aware OpenStreetMap)
@@ -165,18 +175,35 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       setFollowShip(false);
     });
 
+    // Single click: Show options (Jadikan target tujuan ATAU Buat titik)
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      clickTimerRef.current = setTimeout(() => {
+        setClickedCoord({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }, 260);
+    });
+
     // Double tap / double click event to add a waypoint directly at clicked coordinate
     map.on('dblclick', (e: L.LeafletMouseEvent) => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      setClickedCoord(null);
       onManualAddWaypoint({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
 
     return () => {
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Update Base Layer
+  // Update base layer
   const handleSwitchLayer = (type: 'street' | 'satellite' | 'ocean') => {
     if (!mapRef.current) return;
     const currentMap = mapRef.current;
@@ -217,6 +244,43 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       mapRef.current.removeLayer(overlayLayersRef.current.bathymetry);
     }
   };
+
+  // Show clicked position temporary marker
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const map = mapRef.current;
+
+    if (clickedMarkerRef.current) {
+      map.removeLayer(clickedMarkerRef.current);
+      clickedMarkerRef.current = null;
+    }
+
+    if (clickedCoord) {
+      const pinHtml = `
+        <div style="
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          background: #F59E0B;
+          border: 3px solid #FFFFFF;
+          box-shadow: 0 0 15px #F59E0B;
+          animation: pulse 1.5s infinite;
+        "></div>
+      `;
+
+      const customIcon = L.divIcon({
+        html: pinHtml,
+        className: 'clicked-marker-pulse',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      clickedMarkerRef.current = L.marker([clickedCoord.lat, clickedCoord.lng], {
+        icon: customIcon,
+        zIndexOffset: 800,
+      }).addTo(map);
+    }
+  }, [clickedCoord]);
 
   // Update Boat Marker, Orientation, and Accuracy Ring
   useEffect(() => {
@@ -369,8 +433,8 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
 
       const line = L.polyline([shipLatLng, targetLatLng], {
         color: '#f59e0b',
-        weight: 3.5,
-        opacity: 0.9,
+        weight: 4,
+        opacity: 0.95,
         dashArray: '8, 8',
       }).addTo(map);
 
@@ -444,139 +508,314 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
     if (mapRef.current) mapRef.current.zoomOut();
   };
 
+  // Fullscreen Navigation calculations
+  const relativeDelta = Math.round(targetCalc.relativeBearingDelta);
+  const absDelta = Math.abs(relativeDelta);
+  const isOnCourse = absDelta <= (settings.voiceHeadingThreshold || 15);
+
+  // Distance from vessel to clicked coordinate
+  const clickedDistanceNmi =
+    clickedCoord && position
+      ? calculateDistanceMeters(position.lat, position.lng, clickedCoord.lat, clickedCoord.lng) / 1852
+      : null;
+
   return (
-    <div className="relative w-full h-[calc(100vh-4.5rem)] bg-slate-950 overflow-hidden flex flex-col">
-      {/* 1. TOP STATUS & HUD BAR (Offset with safe area margin to avoid notch / mobile status bar overlap) */}
-      <div className="absolute top-2.5 sm:top-3 left-2 right-2 z-[400] flex flex-col gap-1.5 pointer-events-none">
-        {/* Real-time Maritime HUD metrics */}
-        <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex items-center justify-between text-white">
-          {/* Speed & Heading */}
-          <div className="flex items-center gap-3">
-            <div className="border-r border-slate-700 pr-3">
-              <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 block">
-                Kecepatan (SOG)
-              </span>
-              <span className="text-xl font-black tracking-tight text-amber-400 font-mono">
-                {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
-              </span>
-            </div>
-
-            <div>
-              <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 block flex items-center gap-1">
-                <Compass className="w-3 h-3 text-cyan-400" /> Haluan (COG)
-              </span>
-              <span className="text-xl font-black tracking-tight text-cyan-300 font-mono">
-                {position?.heading !== null && position?.heading !== undefined
-                  ? `${Math.round(position.heading)}°`
-                  : '---°'}
-              </span>
-            </div>
-          </div>
-
-          {/* Quick HUD Action Buttons: Sailing Mode, Voice, Explorer */}
-          <div className="flex items-center gap-1.5">
-            {/* Sailing Mode (Mode Berlayar) Button */}
-            <button
-              onClick={onToggleSailingMode}
-              title={isSailingMode ? 'Keluar Mode Berlayar' : 'Mulai Mode Berlayar'}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs tracking-wide shadow-lg active:scale-95 transition border ${
-                isSailingMode
-                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 animate-pulse'
-                  : 'bg-blue-600/80 hover:bg-blue-600 text-white border-blue-400'
-              }`}
-            >
-              {isSailingMode ? <Square className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-              <span>{isSailingMode ? 'BERLAYAR' : 'BERLAYAR'}</span>
-            </button>
-
-            {/* Voice toggle */}
-            <button
-              onClick={onToggleVoice}
-              title="Panduan Suara"
-              className={`p-2.5 rounded-lg border transition active:scale-95 ${
-                settings.voiceGuidanceEnabled
-                  ? 'bg-blue-600/30 border-blue-500 text-blue-300 hover:bg-blue-600/50'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
-              }`}
-            >
-              {settings.voiceGuidanceEnabled ? <Volume2 className="w-5 h-5 text-blue-400" /> : <VolumeX className="w-5 h-5" />}
-            </button>
-
-            {/* Explorer Mode switch */}
-            <button
-              onClick={onOpenExplorerMode}
-              title="Explorer Mode (Tampilan Layar Penuh Nelayan)"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 border border-emerald-400 text-white font-bold text-xs tracking-wide shadow-lg active:scale-95 transition"
-            >
-              <Maximize2 className="w-4 h-4" />
-              <span className="hidden sm:inline">EXPLORER</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Target Destination Banner (if set) */}
-        {targetCalc.target && (
-          <div className="pointer-events-auto bg-amber-950/90 backdrop-blur-md border border-amber-500/60 rounded-xl p-2.5 shadow-xl flex items-center justify-between text-white animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 overflow-hidden">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400 flex items-center justify-center shrink-0">
-                <Anchor className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="truncate">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-amber-300 truncate">
-                    {targetCalc.target.name}
-                  </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-semibold uppercase">
+    <div
+      className={`relative w-full bg-slate-950 overflow-hidden flex flex-col ${
+        isFullscreen ? 'h-screen' : 'h-[calc(100vh-4.5rem)]'
+      }`}
+    >
+      {/* =========================================================================
+          FULLSCREEN NAVIGATION OVERLAY (Tetap Tampilkan Peta Di Bawahnya!)
+          ========================================================================= */}
+      {isFullscreen ? (
+        <>
+          {/* Top Fullscreen HUD Header & Steering Needle */}
+          <div className="absolute top-3 left-3 right-3 z-[600] flex flex-col gap-2 pointer-events-none">
+            {/* Top Header Row */}
+            <div className="pointer-events-auto bg-slate-950/90 backdrop-blur-md border border-slate-700 rounded-2xl p-3 shadow-2xl flex items-center justify-between text-white">
+              <div className="flex items-center gap-2.5 truncate">
+                <button
+                  onClick={onOpenTargetPicker}
+                  className="flex items-center gap-2 bg-slate-900 border border-slate-700 hover:border-amber-400 px-3 py-1.5 rounded-xl active:scale-95 transition truncate"
+                >
+                  <Anchor className="w-4 h-4 text-amber-400 shrink-0" />
+                  <div className="text-left truncate">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold block">
+                      Target Navigasi
+                    </span>
+                    <span className="text-xs sm:text-sm font-black text-amber-300 truncate block max-w-[170px]">
+                      {targetCalc.target ? targetCalc.target.name : 'Pilih Target...'}
+                    </span>
+                  </div>
+                </button>
+                {targetCalc.target && (
+                  <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold uppercase border border-amber-500/40">
                     {CATEGORY_INFO[targetCalc.target.category].label}
                   </span>
-                </div>
-                <div className="text-[11px] font-mono text-slate-300 flex items-center gap-2">
-                  <span>Jarak: <strong className="text-white">{formatDistance(targetCalc.distanceNmi, settings.distanceUnit)}</strong></span>
-                  <span>•</span>
-                  <span>Arah: <strong className="text-white">{Math.round(targetCalc.bearingDeg)}°</strong></span>
-                  <span>•</span>
-                  <span>ETA: <strong className="text-amber-200">{targetCalc.etaTimeFormatted || '--'}</strong></span>
-                </div>
+                )}
+              </div>
+
+              {/* Action buttons: Voice & Exit Fullscreen */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={onToggleVoice}
+                  className={`p-2.5 rounded-xl border transition active:scale-95 ${
+                    settings.voiceGuidanceEnabled
+                      ? 'bg-blue-600/30 border-blue-500 text-blue-300'
+                      : 'bg-slate-800 border-slate-700 text-slate-400'
+                  }`}
+                  title="Panduan Suara"
+                >
+                  {settings.voiceGuidanceEnabled ? <Volume2 className="w-5 h-5 text-blue-400" /> : <VolumeX className="w-5 h-5" />}
+                </button>
+
+                <button
+                  onClick={onToggleFullscreen}
+                  className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-white font-bold active:scale-95 transition"
+                  title="Keluar Layar Penuh"
+                >
+                  <Minimize2 className="w-5 h-5 text-amber-400" />
+                </button>
               </div>
             </div>
 
-            {/* Clear target button */}
-            <button
-              onClick={() => onSelectTarget(null)}
-              className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-800 border border-amber-600 text-amber-200 shrink-0 font-medium active:scale-95 transition"
-            >
-              Lepas
-            </button>
-          </div>
-        )}
+            {/* Steering Correction Needle Bar */}
+            {targetCalc.target && (
+              <div className="pointer-events-auto bg-slate-950/90 backdrop-blur-md border border-slate-700 rounded-2xl p-3 shadow-2xl flex flex-col gap-2">
+                <div className="flex items-center justify-between text-[11px] font-black tracking-wider uppercase">
+                  <span className="text-rose-400 flex items-center gap-1">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Kiri (Port)
+                  </span>
+                  <span className="text-slate-400">Lurus (0°)</span>
+                  <span className="text-emerald-400 flex items-center gap-1">
+                    Kanan (Stbd) <ArrowRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
 
-        {/* GPS Status & Simulation Warnings */}
-        {gpsStatus === 'simulated' && (
-          <div className="pointer-events-auto bg-blue-950/95 border border-cyan-400 text-cyan-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
-            <Radio className="w-4 h-4 text-cyan-400 animate-pulse shrink-0" />
-            <span><strong>Mode Uji Coba Lapangan Aktif</strong> (Simulasi Nelayan Sulawesi - Perairan Spermonde).</span>
-          </div>
-        )}
+                {/* Slider / Gauge */}
+                <div className="relative w-full h-5 bg-slate-900 border border-slate-800 rounded-full overflow-hidden flex items-center justify-center">
+                  <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-slate-700 z-0" />
+                  {/* Needle position */}
+                  <div
+                    className={`absolute top-0 bottom-0 w-3 rounded-full shadow-lg transition-all duration-300 z-10 ${
+                      isOnCourse ? 'bg-emerald-400 ring-2 ring-emerald-300' : 'bg-amber-400 ring-2 ring-amber-300'
+                    }`}
+                    style={{
+                      left: `calc(50% + ${Math.min(Math.max(relativeDelta, -45), 45) * 1.05}%)`,
+                      transform: 'translateX(-50%)',
+                    }}
+                  />
+                </div>
 
-        {gpsStatus === 'searching' && (
-          <div className="pointer-events-auto bg-amber-950/90 border border-amber-500 text-amber-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
-            <Radio className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
-            <span>Mencari sinyal GPS maritim... Pastikan berada di perairan terbuka.</span>
+                {/* Status banner */}
+                <div
+                  className={`py-1.5 px-3 rounded-xl border flex items-center justify-center gap-2 text-xs font-black tracking-wide ${
+                    isOnCourse
+                      ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                      : relativeDelta < 0
+                      ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                      : 'bg-cyan-950/80 border-cyan-500 text-cyan-300'
+                  }`}
+                >
+                  {isOnCourse ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-emerald-400" />
+                      <span>HALUAN MANTAP • PERTAHANKAN ARAH</span>
+                    </>
+                  ) : relativeDelta < 0 ? (
+                    <>
+                      <ArrowLeft className="w-4 h-4 text-amber-400 animate-pulse" />
+                      <span>KOREKSI KEMUDI KE KIRI {absDelta}°</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowRight className="w-4 h-4 text-cyan-400 animate-pulse" />
+                      <span>KOREKSI KEMUDI KE KANAN {absDelta}°</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
 
-        {(gpsStatus === 'denied' || gpsStatus === 'unavailable') && (
-          <div className="pointer-events-auto bg-rose-950/95 border border-rose-500 text-rose-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{gpsErrorMessage || 'GPS tidak aktif. Aktifkan lokasi di pengaturan HP.'}</span>
+          {/* Bottom Fullscreen Telemetry HUD Tiles */}
+          <div className="absolute bottom-3 left-3 right-3 z-[600] pointer-events-none">
+            <div className="pointer-events-auto bg-slate-950/90 backdrop-blur-md border border-slate-700 rounded-2xl p-2.5 shadow-2xl grid grid-cols-4 gap-2 text-center text-white">
+              {/* SOG */}
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block truncate">
+                  Kecepatan (SOG)
+                </span>
+                <span className="text-lg sm:text-2xl font-black text-amber-400 font-mono block">
+                  {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
+                </span>
+              </div>
+
+              {/* Jarak Target */}
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block truncate">
+                  Jarak Target
+                </span>
+                <span className="text-lg sm:text-2xl font-black text-cyan-300 font-mono block">
+                  {targetCalc.target
+                    ? formatDistance(targetCalc.distanceNmi, settings.distanceUnit)
+                    : '--'}
+                </span>
+              </div>
+
+              {/* Haluan / Target */}
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block truncate">
+                  Arah / Haluan
+                </span>
+                <span className="text-base sm:text-xl font-black text-white font-mono block">
+                  {Math.round(targetCalc.bearingDeg)}° <span className="text-xs text-slate-400 font-normal">/ {Math.round(position?.heading ?? 0)}°</span>
+                </span>
+              </div>
+
+              {/* ETA */}
+              <div className="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block truncate">
+                  Estimasi (ETA)
+                </span>
+                <span className="text-sm sm:text-lg font-black text-amber-300 font-mono block truncate">
+                  {targetCalc.etaTimeFormatted || '--'}
+                </span>
+              </div>
+            </div>
           </div>
-        )}
+        </>
+      ) : (
+        /* =========================================================================
+           STANDARD NAVIGATION TOP HUD BAR
+           ========================================================================= */
+        <div className="absolute top-2.5 sm:top-3 left-2 right-2 z-[400] flex flex-col gap-1.5 pointer-events-none">
+          {/* Real-time Maritime HUD metrics */}
+          <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex items-center justify-between text-white">
+            {/* Speed & Heading */}
+            <div className="flex items-center gap-3">
+              <div className="border-r border-slate-700 pr-3">
+                <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 block">
+                  Kecepatan (SOG)
+                </span>
+                <span className="text-xl font-black tracking-tight text-amber-400 font-mono">
+                  {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
+                </span>
+              </div>
 
-        {/* Hint banner: Ketuk 2 kali di peta untuk tambah titik */}
-        <div className="pointer-events-auto self-center bg-slate-900/75 border border-slate-700/60 text-slate-300 text-[10px] px-2.5 py-0.5 rounded-full backdrop-blur-sm">
-          💡 Tips: <strong>Ketuk 2x di peta</strong> untuk tandai titik rumpon baru
+              <div>
+                <span className="text-[10px] tracking-wider uppercase font-semibold text-slate-400 block flex items-center gap-1">
+                  <Compass className="w-3 h-3 text-cyan-400" /> Haluan (COG)
+                </span>
+                <span className="text-xl font-black tracking-tight text-cyan-300 font-mono">
+                  {position?.heading !== null && position?.heading !== undefined
+                    ? `${Math.round(position.heading)}°`
+                    : '---°'}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick HUD Action Buttons: Sailing Mode, Voice, Fullscreen */}
+            <div className="flex items-center gap-1.5">
+              {/* Sailing Mode (Mode Berlayar) Button */}
+              <button
+                onClick={onToggleSailingMode}
+                title={isSailingMode ? 'Keluar Mode Berlayar' : 'Mulai Mode Berlayar'}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs tracking-wide shadow-lg active:scale-95 transition border ${
+                  isSailingMode
+                    ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 animate-pulse'
+                    : 'bg-blue-600/80 hover:bg-blue-600 text-white border-blue-400'
+                }`}
+              >
+                {isSailingMode ? <Square className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+                <span>{isSailingMode ? 'BERLAYAR' : 'BERLAYAR'}</span>
+              </button>
+
+              {/* Voice toggle */}
+              <button
+                onClick={onToggleVoice}
+                title="Panduan Suara"
+                className={`p-2.5 rounded-lg border transition active:scale-95 ${
+                  settings.voiceGuidanceEnabled
+                    ? 'bg-blue-600/30 border-blue-500 text-blue-300 hover:bg-blue-600/50'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'
+                }`}
+              >
+                {settings.voiceGuidanceEnabled ? <Volume2 className="w-5 h-5 text-blue-400" /> : <VolumeX className="w-5 h-5" />}
+              </button>
+
+              {/* Fullscreen Navigation switch (tetap tampilkan peta!) */}
+              <button
+                onClick={onToggleFullscreen}
+                title="Navigasi Layar Penuh (Tetap Tampilkan Peta)"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 border border-emerald-400 text-white font-bold text-xs tracking-wide shadow-lg active:scale-95 transition"
+              >
+                <Maximize2 className="w-4 h-4" />
+                <span className="hidden sm:inline">FULLSCREEN</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Target Destination Banner (if set) */}
+          {targetCalc.target && (
+            <div className="pointer-events-auto bg-amber-950/90 backdrop-blur-md border border-amber-500/60 rounded-xl p-2.5 shadow-xl flex items-center justify-between text-white animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400 flex items-center justify-center shrink-0">
+                  <Anchor className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="truncate">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-amber-300 truncate">
+                      {targetCalc.target.name}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/30 text-amber-200 font-semibold uppercase">
+                      {CATEGORY_INFO[targetCalc.target.category].label}
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-300 flex items-center gap-2">
+                    <span>Jarak: <strong className="text-white">{formatDistance(targetCalc.distanceNmi, settings.distanceUnit)}</strong></span>
+                    <span>•</span>
+                    <span>Arah: <strong className="text-white">{Math.round(targetCalc.bearingDeg)}°</strong></span>
+                    <span>•</span>
+                    <span>ETA: <strong className="text-amber-200">{targetCalc.etaTimeFormatted || '--'}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clear target button */}
+              <button
+                onClick={() => onSelectTarget(null)}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-800 border border-amber-600 text-amber-200 shrink-0 font-medium active:scale-95 transition"
+              >
+                Lepas
+              </button>
+            </div>
+          )}
+
+          {/* GPS Status & Simulation Warnings */}
+          {gpsStatus === 'simulated' && (
+            <div className="pointer-events-auto bg-blue-950/95 border border-cyan-400 text-cyan-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
+              <Radio className="w-4 h-4 text-cyan-400 animate-pulse shrink-0" />
+              <span><strong>Mode Uji Coba Lapangan Aktif</strong> (Simulasi Nelayan Sulawesi - Perairan Spermonde).</span>
+            </div>
+          )}
+
+          {gpsStatus === 'searching' && (
+            <div className="pointer-events-auto bg-amber-950/90 border border-amber-500 text-amber-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
+              <Radio className="w-4 h-4 text-amber-400 animate-spin shrink-0" />
+              <span>Mencari sinyal GPS maritim... Pastikan berada di perairan terbuka.</span>
+            </div>
+          )}
+
+          {(gpsStatus === 'denied' || gpsStatus === 'unavailable') && (
+            <div className="pointer-events-auto bg-rose-950/95 border border-rose-500 text-rose-200 text-xs px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>{gpsErrorMessage || 'GPS tidak aktif. Aktifkan lokasi di pengaturan HP.'}</span>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* 2. WATERMARK ON TOP-RIGHT OF MAP (Opacity 30%, small text) */}
       <div className="absolute top-4 right-3 z-[410] pointer-events-none select-none">
@@ -589,7 +828,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       <div ref={mapContainerRef} className="w-full h-full z-0 bg-slate-900" />
 
       {/* 4. MAP FLOATING CONTROLS (Right side: Layer toggle, Recenter, Zoom, Quick Point) */}
-      <div className="absolute bottom-24 right-3 z-[400] flex flex-col gap-2">
+      <div className={`absolute right-3 z-[400] flex flex-col gap-2 ${isFullscreen ? 'bottom-28' : 'bottom-24'}`}>
         {/* Layer Switcher Menu */}
         <div className="relative">
           <button
@@ -698,122 +937,200 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       </div>
 
       {/* 5. FLOATING "+" BUTTON DI POJOK KIRI BAWAH: TAMBAH MANUAL TITIK */}
-      <div className="absolute bottom-24 left-3 z-[400]">
-        <button
-          onClick={() => onManualAddWaypoint()}
-          className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black border-2 border-amber-300 shadow-2xl flex items-center justify-center active:scale-90 transition shadow-amber-500/30"
-          title="Tambah Manual Titik Koordinat"
-        >
-          <Plus className="w-7 h-7 stroke-[3]" />
-        </button>
-      </div>
+      {!isFullscreen && (
+        <div className="absolute bottom-24 left-3 z-[400]">
+          <button
+            onClick={() => onManualAddWaypoint()}
+            className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black border-2 border-amber-300 shadow-2xl flex items-center justify-center active:scale-90 transition shadow-amber-500/30"
+            title="Tambah Manual Titik Koordinat"
+          >
+            <Plus className="w-7 h-7 stroke-[3]" />
+          </button>
+        </div>
+      )}
 
-      {/* 6. BOTTOM TELEMETRY BAR: SAILING MODE / COORDINATES */}
-      {isSailingMode ? (
-        /* SAILING TELEMETRY HUD (Kecepatan, Jarak Ditempuh, Derajat, Estimasi, Sisa Jarak) */
-        <div className="absolute bottom-2 left-2 right-2 z-[400] bg-slate-950/95 border-2 border-amber-500/80 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md text-white animate-in slide-in-from-bottom-2">
-          {/* Header sailing mode */}
-          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-              <span className="text-xs font-black uppercase tracking-wider text-amber-300">
-                MODE BERLAYAR AKTIF
-              </span>
-              {targetCalc.target && (
-                <span className="text-[11px] text-slate-300 font-semibold truncate max-w-[150px]">
-                  • Menuju {targetCalc.target.name}
+      {/* 6. SINGLE-CLICK ON MAP CONTEXT POPUP: JADIKAN TARGET TUJUAN ATAU BUAT TITIK */}
+      {clickedCoord && (
+        <div className="fixed inset-x-3 bottom-24 sm:bottom-28 max-w-sm mx-auto z-[900] bg-slate-950/95 border-2 border-cyan-400 rounded-2xl p-4 shadow-2xl backdrop-blur-lg text-white animate-in slide-in-from-bottom-3">
+          <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <Crosshair className="w-5 h-5 text-amber-400 animate-spin" />
+              <div>
+                <span className="text-xs font-black uppercase text-amber-300 block">
+                  Titik Peta Dipilih
                 </span>
-              )}
+                <span className="text-[11px] font-mono text-cyan-300 font-bold block">
+                  {formatCoordinates(clickedCoord.lat, clickedCoord.lng, settings.coordinateFormat)}
+                </span>
+              </div>
             </div>
-
             <button
-              onClick={onToggleSailingMode}
-              className="px-2.5 py-1 rounded-lg bg-rose-900/80 hover:bg-rose-800 text-rose-200 border border-rose-600 font-bold text-[11px] active:scale-95 transition"
+              onClick={() => setClickedCoord(null)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white"
             >
-              Akhiri Berlayar
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* 5 Requested Telemetry Metrics */}
-          <div className="grid grid-cols-5 gap-1.5 text-center">
-            {/* 1. Kecepatan */}
-            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
-                Kecepatan
-              </span>
-              <span className="text-sm sm:text-base font-black text-amber-400 font-mono">
-                {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
-              </span>
+          {clickedDistanceNmi !== null && (
+            <div className="text-[11px] text-slate-300 bg-slate-900/80 px-2.5 py-1.5 rounded-lg mb-3 border border-slate-800 flex items-center justify-between">
+              <span>Jarak dari kapal:</span>
+              <strong className="text-cyan-300 font-mono">
+                {formatDistance(clickedDistanceNmi, settings.distanceUnit)}
+              </strong>
             </div>
+          )}
 
-            {/* 2. Jarak Ditempuh */}
-            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
-                Ditempuh
-              </span>
-              <span className="text-sm sm:text-base font-black text-cyan-300 font-mono">
-                {formatDistance(tripDistanceNmi, settings.distanceUnit)}
-              </span>
-            </div>
-
-            {/* 3. Derajat (Haluan COG) */}
-            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
-                Derajat
-              </span>
-              <span className="text-sm sm:text-base font-black text-white font-mono">
-                {position?.heading !== null && position?.heading !== undefined
-                  ? `${Math.round(position.heading)}°`
-                  : '---°'}
-              </span>
-            </div>
-
-            {/* 4. Estimasi (ETA) */}
-            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
-                Estimasi
-              </span>
-              <span className="text-xs sm:text-sm font-black text-amber-200 font-mono truncate block">
-                {targetCalc.etaTimeFormatted || '--'}
-              </span>
-            </div>
-
-            {/* 5. Sisa Jarak */}
-            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
-              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
-                Sisa Jarak
-              </span>
-              <span className="text-sm sm:text-base font-black text-emerald-400 font-mono truncate block">
-                {targetCalc.target
-                  ? formatDistance(targetCalc.distanceNmi, settings.distanceUnit)
-                  : '--'}
-              </span>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* STANDARD BOTTOM BAR: COORDINATES & TARGET SELECTION */
-        <div className="absolute bottom-2 left-2 right-16 z-[400] flex items-center gap-2">
-          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 shadow-xl text-white text-xs flex-1 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                Koordinat Kapal
-              </span>
-              <span className="font-mono text-cyan-300 font-bold text-xs truncate block max-w-[200px]">
-                {position
-                  ? formatCoordinates(position.lat, position.lng, settings.coordinateFormat)
-                  : 'Mencari satelit...'}
-              </span>
-            </div>
-
+          {/* Dua Pilihan Opsi */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Opsi 1: Jadi Target Tujuan Langsung */}
             <button
-              onClick={onOpenTargetPicker}
-              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow border border-blue-400 active:scale-95 transition shrink-0 ml-2"
+              onClick={() => {
+                const tempTarget: Waypoint = {
+                  id: `temp_target_${Date.now()}`,
+                  name: 'Titik Tujuan Peta',
+                  category: 'rumpon',
+                  lat: clickedCoord.lat,
+                  lng: clickedCoord.lng,
+                  notes: 'Ditandai langsung melalui ketukan peta.',
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                };
+                onSelectTarget(tempTarget);
+                setClickedCoord(null);
+              }}
+              className="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex flex-col items-center justify-center gap-1 shadow-lg active:scale-95 transition"
             >
-              {targetCalc.target ? 'Ganti Target' : 'Pilih Target'}
+              <Anchor className="w-4 h-4 fill-current" />
+              <span>Jadikan Target</span>
+            </button>
+
+            {/* Opsi 2: Buat Titik / Rumpon Baru */}
+            <button
+              onClick={() => {
+                const coord = { ...clickedCoord };
+                setClickedCoord(null);
+                onManualAddWaypoint(coord);
+              }}
+              className="py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs flex flex-col items-center justify-center gap-1 shadow-lg active:scale-95 transition"
+            >
+              <MapPin className="w-4 h-4 fill-current" />
+              <span>Buat Titik Baru</span>
             </button>
           </div>
         </div>
+      )}
+
+      {/* 7. BOTTOM TELEMETRY BAR: SAILING MODE / COORDINATES (Only in non-fullscreen) */}
+      {!isFullscreen && (
+        <>
+          {isSailingMode ? (
+            /* SAILING TELEMETRY HUD (Kecepatan, Jarak Ditempuh, Derajat, Estimasi, Sisa Jarak) */
+            <div className="absolute bottom-2 left-2 right-2 z-[400] bg-slate-950/95 border-2 border-amber-500/80 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md text-white animate-in slide-in-from-bottom-2">
+              {/* Header sailing mode */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+                  <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                    MODE BERLAYAR AKTIF
+                  </span>
+                  {targetCalc.target && (
+                    <span className="text-[11px] text-slate-300 font-semibold truncate max-w-[150px]">
+                      • Menuju {targetCalc.target.name}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  onClick={onToggleSailingMode}
+                  className="px-2.5 py-1 rounded-lg bg-rose-900/80 hover:bg-rose-800 text-rose-200 border border-rose-600 font-bold text-[11px] active:scale-95 transition"
+                >
+                  Akhiri Berlayar
+                </button>
+              </div>
+
+              {/* 5 Requested Telemetry Metrics */}
+              <div className="grid grid-cols-5 gap-1.5 text-center">
+                {/* 1. Kecepatan */}
+                <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                    Kecepatan
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-amber-400 font-mono">
+                    {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
+                  </span>
+                </div>
+
+                {/* 2. Jarak Ditempuh */}
+                <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                    Ditempuh
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-cyan-300 font-mono">
+                    {formatDistance(tripDistanceNmi, settings.distanceUnit)}
+                  </span>
+                </div>
+
+                {/* 3. Derajat (Haluan COG) */}
+                <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                    Derajat
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-white font-mono">
+                    {position?.heading !== null && position?.heading !== undefined
+                      ? `${Math.round(position.heading)}°`
+                      : '---°'}
+                  </span>
+                </div>
+
+                {/* 4. Estimasi (ETA) */}
+                <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                    Estimasi
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-amber-200 font-mono truncate block">
+                    {targetCalc.etaTimeFormatted || '--'}
+                  </span>
+                </div>
+
+                {/* 5. Sisa Jarak */}
+                <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                    Sisa Jarak
+                  </span>
+                  <span className="text-sm sm:text-base font-black text-emerald-400 font-mono truncate block">
+                    {targetCalc.target
+                      ? formatDistance(targetCalc.distanceNmi, settings.distanceUnit)
+                      : '--'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* STANDARD BOTTOM BAR: COORDINATES & TARGET SELECTION */
+            <div className="absolute bottom-2 left-2 right-16 z-[400] flex items-center gap-2">
+              <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 shadow-xl text-white text-xs flex-1 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">
+                    Koordinat Kapal
+                  </span>
+                  <span className="font-mono text-cyan-300 font-bold text-xs truncate block max-w-[200px]">
+                    {position
+                      ? formatCoordinates(position.lat, position.lng, settings.coordinateFormat)
+                      : 'Mencari satelit...'}
+                  </span>
+                </div>
+
+                <button
+                  onClick={onOpenTargetPicker}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow border border-blue-400 active:scale-95 transition shrink-0 ml-2"
+                >
+                  {targetCalc.target ? 'Ganti Target' : 'Pilih Target'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

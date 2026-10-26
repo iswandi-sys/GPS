@@ -26,7 +26,6 @@ import { exportWaypointsToJSON, downloadFile } from './services/ImportExportMana
 
 // Components
 import { NavigationMap } from './components/NavigationMap';
-import { ExplorerMode } from './components/ExplorerMode';
 import { TitikSayaMenu } from './components/TitikSayaMenu';
 import { CuacaLautMenu } from './components/CuacaLautMenu';
 import { PetaOfflineMenu } from './components/PetaOfflineMenu';
@@ -319,74 +318,76 @@ export default function App() {
   return (
     <div className="w-full min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans select-none antialiased">
       {/* Offline Status Warning Banner */}
-      <OfflineIndicator />
+      {!isExplorerMode && <OfflineIndicator />}
 
-      {/* 1. TOP APP HEADER (Status bar safe area padding fix) */}
-      <header className="w-full bg-slate-900 border-b border-slate-800 px-3 sm:px-4 pt-[max(env(safe-area-inset-top),1rem)] pb-2 flex items-center justify-between z-[500] shrink-0 shadow-md">
-        <div className="flex items-center gap-2">
-          {/* Logo Anchor / Ship */}
-          <div className="w-9 h-9 rounded-xl bg-cyan-600/20 border border-cyan-400 flex items-center justify-center text-cyan-300 shrink-0">
-            <Anchor className="w-5 h-5 text-cyan-400" />
+      {/* 1. TOP APP HEADER (Hidden during Fullscreen Navigation to give 100% space to the map) */}
+      {!isExplorerMode && (
+        <header className="w-full bg-slate-900 border-b border-slate-800 px-3 sm:px-4 pt-[max(env(safe-area-inset-top),1rem)] pb-2 flex items-center justify-between z-[500] shrink-0 shadow-md">
+          <div className="flex items-center gap-2">
+            {/* Logo Anchor / Ship */}
+            <div className="w-9 h-9 rounded-xl bg-cyan-600/20 border border-cyan-400 flex items-center justify-center text-cyan-300 shrink-0">
+              <Anchor className="w-5 h-5 text-cyan-400" />
+            </div>
+
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-black text-sm tracking-wide text-white">NAVIGASI LAUT SR</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
+                  OFFLINE
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-400 block -mt-0.5">Sulawesi & Nusa Tenggara</span>
+            </div>
           </div>
 
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-black text-sm tracking-wide text-white">NAVIGASI LAUT SR</span>
-              <span className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30">
-                OFFLINE
+          {/* Right header actions: Simulation Toggle & GPS Status */}
+          <div className="flex items-center gap-2">
+            {/* Simulation Toggle Button */}
+            <button
+              onClick={handleToggleSimulation}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition flex items-center gap-1 ${
+                locationService.isSimulating()
+                  ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+              }`}
+              title="Klik untuk uji navigasi simulasi atau kembali ke sinyal GPS asli"
+            >
+              <Radio className="w-3 h-3" />
+              <span>{locationService.isSimulating() ? 'Simulasi' : 'Uji Lapangan'}</span>
+            </button>
+
+            {/* GPS Satellite indicator */}
+            <div
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
+                gpsStatus === 'active' || gpsStatus === 'simulated'
+                  ? 'bg-emerald-950/80 border border-emerald-500 text-emerald-300'
+                  : gpsStatus === 'searching'
+                  ? 'bg-amber-950/80 border border-amber-500 text-amber-300'
+                  : 'bg-rose-950/80 border border-rose-500 text-rose-300'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  gpsStatus === 'active' || gpsStatus === 'simulated'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : gpsStatus === 'searching'
+                    ? 'bg-amber-400 animate-ping'
+                    : 'bg-rose-400'
+                }`}
+              />
+              <span className="text-[10px] uppercase font-bold tracking-wider">
+                {gpsStatus === 'active'
+                  ? 'GPS Terkunci'
+                  : gpsStatus === 'simulated'
+                  ? 'Demo Rute'
+                  : gpsStatus === 'searching'
+                  ? 'Mencari...'
+                  : 'Tanpa GPS'}
               </span>
             </div>
-            <span className="text-[10px] text-slate-400 block -mt-0.5">Sulawesi & Nusa Tenggara</span>
           </div>
-        </div>
-
-        {/* Right header actions: Simulation Toggle & GPS Status */}
-        <div className="flex items-center gap-2">
-          {/* Simulation Toggle Button */}
-          <button
-            onClick={handleToggleSimulation}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition flex items-center gap-1 ${
-              locationService.isSimulating()
-                ? 'bg-amber-500/20 border-amber-400 text-amber-300'
-                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-            }`}
-            title="Klik untuk uji navigasi simulasi atau kembali ke sinyal GPS asli"
-          >
-            <Radio className="w-3 h-3" />
-            <span>{locationService.isSimulating() ? 'Simulasi' : 'Uji Lapangan'}</span>
-          </button>
-
-          {/* GPS Satellite indicator */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold ${
-              gpsStatus === 'active' || gpsStatus === 'simulated'
-                ? 'bg-emerald-950/80 border border-emerald-500 text-emerald-300'
-                : gpsStatus === 'searching'
-                ? 'bg-amber-950/80 border border-amber-500 text-amber-300'
-                : 'bg-rose-950/80 border border-rose-500 text-rose-300'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                gpsStatus === 'active' || gpsStatus === 'simulated'
-                  ? 'bg-emerald-400 animate-pulse'
-                  : gpsStatus === 'searching'
-                  ? 'bg-amber-400 animate-ping'
-                  : 'bg-rose-400'
-              }`}
-            />
-            <span className="text-[10px] uppercase font-bold tracking-wider">
-              {gpsStatus === 'active'
-                ? 'GPS Terkunci'
-                : gpsStatus === 'simulated'
-                ? 'Demo Rute'
-                : gpsStatus === 'searching'
-                ? 'Mencari...'
-                : 'Tanpa GPS'}
-            </span>
-          </div>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* 2. MAIN ACTIVE VIEW CONTENT */}
       <main className="flex-1 w-full relative overflow-y-auto">
@@ -400,9 +401,10 @@ export default function App() {
             settings={settings}
             isSailingMode={isSailingMode}
             tripDistanceNmi={tripDistanceNmi}
+            isFullscreen={isExplorerMode}
+            onToggleFullscreen={() => setIsExplorerMode(!isExplorerMode)}
             onToggleSailingMode={handleToggleSailingMode}
             onSelectTarget={(wp) => setSelectedTargetWaypoint(wp)}
-            onOpenExplorerMode={() => setIsExplorerMode(true)}
             onToggleVoice={() =>
               handleUpdateSettings({
                 ...settings,
@@ -462,27 +464,7 @@ export default function App() {
         )}
       </main>
 
-      {/* 3. FULL-SCREEN EXPLORER MODE OVERLAY */}
-      {isExplorerMode && (
-        <ExplorerMode
-          position={position}
-          targetCalc={targetCalc}
-          settings={settings}
-          onClose={() => setIsExplorerMode(false)}
-          onToggleVoice={() =>
-            handleUpdateSettings({
-              ...settings,
-              voiceGuidanceEnabled: !settings.voiceGuidanceEnabled,
-            })
-          }
-          onOpenTargetPicker={() => {
-            setIsExplorerMode(false);
-            setIsTargetPickerOpen(true);
-          }}
-        />
-      )}
-
-      {/* 4. MODALS */}
+      {/* 3. MODALS */}
       {/* Add / Edit Waypoint Modal */}
       <WaypointModal
         isOpen={isWaypointModalOpen}
@@ -574,8 +556,9 @@ export default function App() {
         </div>
       )}
 
-      {/* 5. BOTTOM NAVIGATION BAR (5 Menus - Large touch targets for Android at sea) */}
-      <nav className="fixed bottom-0 left-0 right-0 h-18 bg-slate-900/95 border-t border-slate-800 backdrop-blur-md z-[500] flex items-stretch justify-around px-1">
+      {/* 4. BOTTOM NAVIGATION BAR (Hidden during Fullscreen Navigation to keep 100% map view) */}
+      {!isExplorerMode && (
+        <nav className="fixed bottom-0 left-0 right-0 h-18 bg-slate-900/95 border-t border-slate-800 backdrop-blur-md z-[500] flex items-stretch justify-around px-1">
         {/* Menu 1: Navigasi */}
         <button
           onClick={() => setActiveTab('navigasi')}
@@ -631,6 +614,7 @@ export default function App() {
           <span className="text-[11px] tracking-tight">Pengaturan</span>
         </button>
       </nav>
+      )}
     </div>
   );
 }
