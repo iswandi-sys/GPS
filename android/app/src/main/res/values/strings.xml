@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NAVIGASI LAUT SR</string>
+    <string name="title_activity_main">NAVIGASI LAUT SR</string>
+    <string name="package_name">com.navigasilaut.sr</string>
+    <string name="custom_url_scheme">com.navigasilaut.sr</string>
+</resources>
