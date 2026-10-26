@@ -19,10 +19,12 @@ export interface Waypoint {
 }
 
 export type BoatIconType = 
-  | 'katir'       // Perahu Cadik / Sandeq Tradisional
-  | 'kapal_kayu'  // Kapal Motor Kayu Nelayan
-  | 'speedboat'   // Speedboat Navigasi
-  | 'pamboat';    // Pamboat / Perahu Panjang
+  | 'katir'           // Perahu Cadik / Sandeq Tradisional
+  | 'kapal_kayu'      // Kapal Motor Kayu Nelayan
+  | 'speedboat'       // Speedboat Navigasi
+  | 'pamboat'         // Pamboat / Perahu Panjang
+  | 'pagae'           // Perahu Pagae Tradisional
+  | 'kapal_sumber_01'; // Kapal Sumber 01
 
 export type CoordinateFormat = 'DD' | 'DMS';
 export type SpeedUnit = 'knot' | 'kmh';

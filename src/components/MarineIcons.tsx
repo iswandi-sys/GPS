@@ -66,6 +66,14 @@ export const BOAT_NAMES: Record<BoatIconType, { label: string; desc: string }> =
     label: 'Pamboat / Cadik Tempel',
     desc: 'Perahu panjang ramping mesin tempel',
   },
+  pagae: {
+    label: 'Perahu Pagae',
+    desc: 'Perahu jaring lingkar / purse seine khas nelayan Sulawesi',
+  },
+  kapal_sumber_01: {
+    label: 'Kapal Sumber 01',
+    desc: 'Kapal motor penangkap ikan & ekspedisi laut Sumber 01',
+  },
 };
 
 export const BoatSvg: React.FC<{ type: BoatIconType; size?: number; className?: string }> = ({
@@ -174,6 +182,77 @@ export const BoatSvg: React.FC<{ type: BoatIconType; size?: number; className?: 
           <line x1="32" y1="14" x2="32" y2="52" stroke="#FFFFFF" strokeWidth="1.5" strokeDasharray="2 2" />
           <rect x="30" y="59" width="4" height="4" fill="#0F172A" />
           <polygon points="32,1 28,7 36,7" fill="#FACC15" />
+        </svg>
+      );
+    case 'pagae':
+      // Traditional Pagae boat with outriggers, net roller platform, and night lights
+      return (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 64 64"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className={className}
+        >
+          {/* Main Pagae wooden hull */}
+          <path
+            d="M32 3 C39 15 41 42 38 58 L26 58 C23 42 25 15 32 3 Z"
+            fill="#0284C7"
+            stroke="#0369A1"
+            strokeWidth="2"
+          />
+          {/* Light fishing outrigger booms */}
+          <line x1="6" y1="28" x2="58" y2="28" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" />
+          <line x1="10" y1="46" x2="54" y2="46" stroke="#CBD5E1" strokeWidth="2.5" strokeLinecap="round" />
+          {/* Outrigger floats */}
+          <rect x="5" y="18" width="3.5" height="34" rx="1.5" fill="#F8FAFC" stroke="#0284C7" strokeWidth="1" />
+          <rect x="55" y="18" width="3.5" height="34" rx="1.5" fill="#F8FAFC" stroke="#0284C7" strokeWidth="1" />
+          {/* Fishing lamps / Genset lights cluster */}
+          <circle cx="32" cy="22" r="3" fill="#FACC15" stroke="#EAB308" strokeWidth="1" />
+          <circle cx="28" cy="24" r="2" fill="#FEF08A" />
+          <circle cx="36" cy="24" r="2" fill="#FEF08A" />
+          {/* Net storage deck */}
+          <rect x="27" y="32" width="10" height="16" rx="2" fill="#0F172A" stroke="#334155" strokeWidth="1" />
+          {/* Bow direction arrow */}
+          <polygon points="32,1 27,9 37,9" fill="#EF4444" />
+        </svg>
+      );
+    case 'kapal_sumber_01':
+      // Kapal Sumber 01 - commercial fishing & transport vessel with bold blue-white hull and "SUMBER 01" cabin
+      return (
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 64 64"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className={className}
+        >
+          {/* Heavy sea hull */}
+          <path
+            d="M32 2 C44 14 46 44 43 59 L21 59 C18 44 20 14 32 2 Z"
+            fill="#0F766E"
+            stroke="#134E4A"
+            strokeWidth="2"
+          />
+          {/* White deck line */}
+          <path
+            d="M32 6 C41 16 43 42 40 56 L24 56 C21 42 23 16 32 6 Z"
+            fill="#0284C7"
+          />
+          {/* Superstructure / Wheelhouse */}
+          <rect x="24" y="20" width="16" height="22" rx="3" fill="#F8FAFC" stroke="#0F172A" strokeWidth="1.5" />
+          {/* Windshield */}
+          <rect x="26" y="22" width="12" height="6" rx="1" fill="#0284C7" />
+          {/* Radar scanner */}
+          <line x1="32" y1="28" x2="32" y2="34" stroke="#F59E0B" strokeWidth="2" />
+          <circle cx="32" cy="30" r="2.5" fill="#EF4444" />
+          {/* "S1" / Sumber 01 logo badge on stern */}
+          <rect x="25" y="46" width="14" height="7" rx="1.5" fill="#FACC15" />
+          <text x="32" y="51.5" fill="#0F172A" fontSize="5" fontWeight="900" textAnchor="middle" fontFamily="sans-serif">S-01</text>
+          {/* Red bow arrow */}
+          <polygon points="32,0 26,8 38,8" fill="#EF4444" />
         </svg>
       );
   }

@@ -24,6 +24,8 @@ interface WaypointModalProps {
   waypointToEdit: Waypoint | null;
   currentGpsPosition: NavPosition | null;
   coordinateFormat: CoordinateFormat;
+  initialCoord?: { lat: number; lng: number } | null;
+  defaultMode?: 'GPS' | 'DD' | 'DMS';
   onSave: (waypoint: Waypoint) => void;
   onClose: () => void;
   onDelete?: (id: string) => void;
@@ -34,6 +36,8 @@ export const WaypointModal: React.FC<WaypointModalProps> = ({
   waypointToEdit,
   currentGpsPosition,
   coordinateFormat,
+  initialCoord,
+  defaultMode = 'GPS',
   onSave,
   onClose,
   onDelete,
@@ -84,9 +88,30 @@ export const WaypointModal: React.FC<WaypointModalProps> = ({
       setLngMin(dmsLng.minutes);
       setLngSec(dmsLng.seconds);
       setLngDir(dmsLng.direction as 'E' | 'W');
+    } else if (initialCoord) {
+      // Direct coordinate clicked on map
+      setLat(initialCoord.lat);
+      setLng(initialCoord.lng);
+      setInputMode('DD');
+
+      const dmsLat = decimalToDMS(initialCoord.lat, true);
+      const dmsLng = decimalToDMS(initialCoord.lng, false);
+      setLatDeg(dmsLat.degrees);
+      setLatMin(dmsLat.minutes);
+      setLatSec(dmsLat.seconds);
+      setLatDir(dmsLat.direction as 'N' | 'S');
+
+      setLngDeg(dmsLng.degrees);
+      setLngMin(dmsLng.minutes);
+      setLngSec(dmsLng.seconds);
+      setLngDir(dmsLng.direction as 'E' | 'W');
+      setName('Titik Peta Baru');
+      setCategory('rumpon');
+      setNotes('');
+      setPhotoDataUrl(undefined);
     } else {
-      // Default: Use current vessel GPS if available
-      if (currentGpsPosition) {
+      // Default: Use vessel GPS if requested and available
+      if (defaultMode === 'GPS' && currentGpsPosition) {
         setLat(currentGpsPosition.lat);
         setLng(currentGpsPosition.lng);
         setInputMode('GPS');
@@ -103,9 +128,23 @@ export const WaypointModal: React.FC<WaypointModalProps> = ({
         setLngSec(dmsLng.seconds);
         setLngDir(dmsLng.direction as 'E' | 'W');
       } else {
-        setLat(-5.12);
-        setLng(119.42);
-        setInputMode('DD');
+        const fallbackLat = currentGpsPosition ? currentGpsPosition.lat : -5.12;
+        const fallbackLng = currentGpsPosition ? currentGpsPosition.lng : 119.42;
+        setLat(fallbackLat);
+        setLng(fallbackLng);
+        setInputMode(defaultMode === 'DMS' ? 'DMS' : 'DD');
+
+        const dmsLat = decimalToDMS(fallbackLat, true);
+        const dmsLng = decimalToDMS(fallbackLng, false);
+        setLatDeg(dmsLat.degrees);
+        setLatMin(dmsLat.minutes);
+        setLatSec(dmsLat.seconds);
+        setLatDir(dmsLat.direction as 'N' | 'S');
+
+        setLngDeg(dmsLng.degrees);
+        setLngMin(dmsLng.minutes);
+        setLngSec(dmsLng.seconds);
+        setLngDir(dmsLng.direction as 'E' | 'W');
       }
       setName('');
       setCategory('rumpon');
@@ -113,7 +152,7 @@ export const WaypointModal: React.FC<WaypointModalProps> = ({
       setPhotoDataUrl(undefined);
     }
     setCoordError('');
-  }, [waypointToEdit, currentGpsPosition, isOpen]);
+  }, [waypointToEdit, initialCoord, defaultMode, currentGpsPosition, isOpen]);
 
   if (!isOpen) return null;
 

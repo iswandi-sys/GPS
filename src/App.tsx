@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Waypoint,
   NavPosition,
@@ -20,7 +20,7 @@ import {
   saveSettings,
 } from './services/db';
 import { locationService } from './services/LocationService';
-import { computeNavTarget } from './services/NavigationEngine';
+import { computeNavTarget, calculateDistanceMeters } from './services/NavigationEngine';
 import { voiceGuidance } from './services/VoiceGuidance';
 import { exportWaypointsToJSON, downloadFile } from './services/ImportExportManager';
 
@@ -49,8 +49,38 @@ import {
 import { CATEGORY_INFO } from './components/MarineIcons';
 import { formatDistance } from './services/NavigationEngine';
 
-// Seed initial Sulsel / NTT fishing waypoints on first launch
+// Seed initial Sulsel, NTB, & NTT fishing waypoints
 const INITIAL_FISHING_WAYPOINTS: Waypoint[] = [
+  {
+    id: 'seed_wp_pelabuhan_kassi_kajang',
+    name: 'Pelabuhan Kassi Kajang',
+    category: 'pelabuhan',
+    lat: -5.3235,
+    lng: 120.3540,
+    notes: 'Pelabuhan Kassi Kajang, Bulukumba. Pangkalan kapal nelayan dan penyeberangan.',
+    createdAt: Date.now() - 86400000 * 2,
+    updatedAt: Date.now() - 86400000 * 2,
+  },
+  {
+    id: 'seed_wp_pantai_sukadana_bayan',
+    name: 'Pantai Sukadana Bayan',
+    category: 'tempat_berlindung',
+    lat: -8.2450,
+    lng: 116.3850,
+    notes: 'Pantai Sukadana, Bayan, Lombok Utara. Tempat tambat perahu dan perairan tenang.',
+    createdAt: Date.now() - 86400000 * 3,
+    updatedAt: Date.now() - 86400000 * 3,
+  },
+  {
+    id: 'seed_wp_labuan_lombok',
+    name: 'Labuan Lombok (Pringgabaya)',
+    category: 'pelabuhan',
+    lat: -8.5080,
+    lng: 116.6690,
+    notes: 'Pelabuhan Labuan Lombok, Selat Alas. Pendaratan ikan dan jalur kapal antar-pulau.',
+    createdAt: Date.now() - 86400000 * 4,
+    updatedAt: Date.now() - 86400000 * 4,
+  },
   {
     id: 'seed_wp_1',
     name: 'Rumpon Paotere 01 (Cakalang)',
@@ -68,8 +98,8 @@ const INITIAL_FISHING_WAYPOINTS: Waypoint[] = [
     lat: -5.0830,
     lng: 119.3170,
     notes: 'Karang tubir kedalaman 35 meter, target tenggiri dan kakap merah.',
-    createdAt: Date.now() - 86400000 * 4,
-    updatedAt: Date.now() - 86400000 * 4,
+    createdAt: Date.now() - 86400000 * 6,
+    updatedAt: Date.now() - 86400000 * 6,
   },
   {
     id: 'seed_wp_3',
@@ -98,8 +128,8 @@ const INITIAL_FISHING_WAYPOINTS: Waypoint[] = [
     lat: -5.1200,
     lng: 120.2500,
     notes: 'Teluk terlindung dari gelombang musim barat.',
-    createdAt: Date.now() - 86400000 * 3,
-    updatedAt: Date.now() - 86400000 * 3,
+    createdAt: Date.now() - 86400000 * 9,
+    updatedAt: Date.now() - 86400000 * 9,
   },
 ];
 
@@ -110,6 +140,11 @@ export default function App() {
   const [position, setPosition] = useState<NavPosition | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GPSStatus>('searching');
   const [gpsErrorMessage, setGpsErrorMessage] = useState<string>('');
+
+  // Sailing Mode & Trip Tracking
+  const [isSailingMode, setIsSailingMode] = useState<boolean>(false);
+  const [tripDistanceNmi, setTripDistanceNmi] = useState<number>(0);
+  const lastRecordedPosRef = useRef<{ lat: number; lng: number } | null>(null);
 
   // Waypoints & Settings
   const [waypoints, setWaypoints] = useState<Waypoint[]>([]);
@@ -133,6 +168,8 @@ export default function App() {
   const [isExplorerMode, setIsExplorerMode] = useState<boolean>(false);
   const [isWaypointModalOpen, setIsWaypointModalOpen] = useState<boolean>(false);
   const [waypointToEdit, setWaypointToEdit] = useState<Waypoint | null>(null);
+  const [modalInitialCoord, setModalInitialCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [modalDefaultMode, setModalDefaultMode] = useState<'GPS' | 'DD' | 'DMS'>('GPS');
   const [isImportExportOpen, setIsImportExportOpen] = useState<boolean>(false);
   const [isTargetPickerOpen, setIsTargetPickerOpen] = useState<boolean>(false);
 
@@ -149,10 +186,22 @@ export default function App() {
           setWaypoints(INITIAL_FISHING_WAYPOINTS);
           setSelectedTargetWaypoint(INITIAL_FISHING_WAYPOINTS[0]);
         } else {
-          setWaypoints(loadedWaypoints);
-          // Set first rumpon as default target if available
-          const defaultTarget = loadedWaypoints.find((w) => w.category === 'rumpon') || loadedWaypoints[0];
-          setSelectedTargetWaypoint(defaultTarget);
+          // Check if newly requested waypoints exist; if not, merge them in
+          const existingNames = new Set(loadedWaypoints.map((w) => w.name.toLowerCase().trim()));
+          const missingInitial = INITIAL_FISHING_WAYPOINTS.filter(
+            (w) => !existingNames.has(w.name.toLowerCase().trim())
+          );
+          if (missingInitial.length > 0) {
+            await saveWaypointsBatch(missingInitial);
+            const merged = await getAllWaypoints();
+            setWaypoints(merged);
+            const defaultTarget = merged.find((w) => w.category === 'pelabuhan') || merged[0];
+            setSelectedTargetWaypoint(defaultTarget);
+          } else {
+            setWaypoints(loadedWaypoints);
+            const defaultTarget = loadedWaypoints.find((w) => w.category === 'rumpon') || loadedWaypoints[0];
+            setSelectedTargetWaypoint(defaultTarget);
+          }
         }
       } catch (err) {
         console.error('Failed to load initial data:', err);
@@ -161,12 +210,32 @@ export default function App() {
     initData();
   }, []);
 
-  // 2. Start GPS Tracking via LocationService
+  // 2. Start GPS Tracking via LocationService & calculate Trip Distance in Sailing Mode
   useEffect(() => {
     const unsubscribe = locationService.subscribe((pos, status, error) => {
       setPosition(pos);
       setGpsStatus(status);
       if (error) setGpsErrorMessage(error);
+
+      // Accumulate trip distance when sailing mode is active
+      if (isSailingMode && pos) {
+        if (lastRecordedPosRef.current) {
+          const deltaMeters = calculateDistanceMeters(
+            lastRecordedPosRef.current.lat,
+            lastRecordedPosRef.current.lng,
+            pos.lat,
+            pos.lng
+          );
+          // Only add if movement is realistic (> 3 meters to filter GPS noise)
+          if (deltaMeters > 3 && deltaMeters < 5000) {
+            const deltaNmi = deltaMeters / 1852;
+            setTripDistanceNmi((prev) => prev + deltaNmi);
+            lastRecordedPosRef.current = { lat: pos.lat, lng: pos.lng };
+          }
+        } else {
+          lastRecordedPosRef.current = { lat: pos.lat, lng: pos.lng };
+        }
+      }
     });
 
     locationService.startTracking();
@@ -175,7 +244,23 @@ export default function App() {
       unsubscribe();
       locationService.stopTracking();
     };
-  }, []);
+  }, [isSailingMode]);
+
+  // Toggle Sailing Mode
+  const handleToggleSailingMode = () => {
+    const next = !isSailingMode;
+    setIsSailingMode(next);
+    if (next) {
+      // Start/reset new trip
+      setTripDistanceNmi(0);
+      if (position) {
+        lastRecordedPosRef.current = { lat: position.lat, lng: position.lng };
+      }
+      voiceGuidance.speak('Mode berlayar aktif. Telemetri perjalanan dan haluan dipantau.', true);
+    } else {
+      voiceGuidance.speak('Mode berlayar dihentikan.', true);
+    }
+  };
 
   // 3. Compute real-time Navigation Target calculations
   const targetCalc: NavTargetCalculation = useMemo(() => {
@@ -236,11 +321,11 @@ export default function App() {
       {/* Offline Status Warning Banner */}
       <OfflineIndicator />
 
-      {/* 1. TOP APP HEADER */}
-      <header className="h-14 bg-slate-900 border-b border-slate-800 px-3 sm:px-4 flex items-center justify-between z-[500] shrink-0">
+      {/* 1. TOP APP HEADER (Status bar safe area padding fix) */}
+      <header className="w-full bg-slate-900 border-b border-slate-800 px-3 sm:px-4 pt-[max(env(safe-area-inset-top),1rem)] pb-2 flex items-center justify-between z-[500] shrink-0 shadow-md">
         <div className="flex items-center gap-2">
           {/* Logo Anchor / Ship */}
-          <div className="w-8 h-8 rounded-lg bg-cyan-600/20 border border-cyan-400 flex items-center justify-center text-cyan-300">
+          <div className="w-9 h-9 rounded-xl bg-cyan-600/20 border border-cyan-400 flex items-center justify-center text-cyan-300 shrink-0">
             <Anchor className="w-5 h-5 text-cyan-400" />
           </div>
 
@@ -313,6 +398,9 @@ export default function App() {
             targetCalc={targetCalc}
             waypoints={waypoints}
             settings={settings}
+            isSailingMode={isSailingMode}
+            tripDistanceNmi={tripDistanceNmi}
+            onToggleSailingMode={handleToggleSailingMode}
             onSelectTarget={(wp) => setSelectedTargetWaypoint(wp)}
             onOpenExplorerMode={() => setIsExplorerMode(true)}
             onToggleVoice={() =>
@@ -323,6 +411,14 @@ export default function App() {
             }
             onQuickAddWaypoint={() => {
               setWaypointToEdit(null);
+              setModalInitialCoord(null);
+              setModalDefaultMode('GPS');
+              setIsWaypointModalOpen(true);
+            }}
+            onManualAddWaypoint={(coord) => {
+              setWaypointToEdit(null);
+              setModalInitialCoord(coord || null);
+              setModalDefaultMode('DD');
               setIsWaypointModalOpen(true);
             }}
             onOpenTargetPicker={() => setIsTargetPickerOpen(true)}
@@ -337,10 +433,13 @@ export default function App() {
             settings={settings}
             onOpenAddModal={() => {
               setWaypointToEdit(null);
+              setModalInitialCoord(null);
+              setModalDefaultMode('GPS');
               setIsWaypointModalOpen(true);
             }}
             onEditWaypoint={(wp) => {
               setWaypointToEdit(wp);
+              setModalInitialCoord(null);
               setIsWaypointModalOpen(true);
             }}
             onDeleteWaypoint={handleDeleteWaypoint}
@@ -390,9 +489,14 @@ export default function App() {
         waypointToEdit={waypointToEdit}
         currentGpsPosition={position}
         coordinateFormat={settings.coordinateFormat}
+        initialCoord={modalInitialCoord}
+        defaultMode={modalDefaultMode}
         onSave={handleSaveWaypoint}
         onDelete={handleDeleteWaypoint}
-        onClose={() => setIsWaypointModalOpen(false)}
+        onClose={() => {
+          setIsWaypointModalOpen(false);
+          setModalInitialCoord(null);
+        }}
       />
 
       {/* Import / Export Modal */}

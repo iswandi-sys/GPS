@@ -21,7 +21,11 @@ import {
   Navigation,
   AlertTriangle,
   Radio,
-  Eye,
+  Plus,
+  Play,
+  Square,
+  Ship,
+  Flag,
 } from 'lucide-react';
 import { formatCoordinates } from '../services/CoordinateConverter';
 import { formatSpeed, formatDistance } from '../services/NavigationEngine';
@@ -33,10 +37,14 @@ interface NavigationMapProps {
   targetCalc: NavTargetCalculation;
   waypoints: Waypoint[];
   settings: AppSettings;
+  isSailingMode: boolean;
+  tripDistanceNmi: number;
+  onToggleSailingMode: () => void;
   onSelectTarget: (wp: Waypoint | null) => void;
   onOpenExplorerMode: () => void;
   onToggleVoice: () => void;
   onQuickAddWaypoint: () => void;
+  onManualAddWaypoint: (initialCoord?: { lat: number; lng: number }) => void;
   onOpenTargetPicker: () => void;
 }
 
@@ -47,10 +55,14 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
   targetCalc,
   waypoints,
   settings,
+  isSailingMode,
+  tripDistanceNmi,
+  onToggleSailingMode,
   onSelectTarget,
   onOpenExplorerMode,
   onToggleVoice,
   onQuickAddWaypoint,
+  onManualAddWaypoint,
   onOpenTargetPicker,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -81,6 +93,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       zoom: 12,
       zoomControl: false,
       attributionControl: false,
+      doubleClickZoom: false, // Disable default zoom on dblclick to allow "Ketuk Dua Kali untuk Tambah Titik"
     });
 
     // 1. Street Layer (Offline-aware OpenStreetMap)
@@ -150,6 +163,11 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
     // Detect user pan/drag to disable follow mode temporarily
     map.on('dragstart', () => {
       setFollowShip(false);
+    });
+
+    // Double tap / double click event to add a waypoint directly at clicked coordinate
+    map.on('dblclick', (e: L.LeafletMouseEvent) => {
+      onManualAddWaypoint({ lat: e.latlng.lat, lng: e.latlng.lng });
     });
 
     return () => {
@@ -379,6 +397,26 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
         <path d="M32 2 C36 14 37 46 35 60 L29 60 C27 46 28 14 32 2 Z" fill="#F43F5E" stroke="#FFFFFF" stroke-width="2"/>
         <polygon points="32,1 28,7 36,7" fill="#FACC15"/>
       `;
+    } else if (type === 'pagae') {
+      return `
+        <path d="M32 3 C39 15 41 42 38 58 L26 58 C23 42 25 15 32 3 Z" fill="#0284C7" stroke="#FFFFFF" stroke-width="2"/>
+        <line x1="6" y1="28" x2="58" y2="28" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="10" y1="46" x2="54" y2="46" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+        <rect x="5" y="18" width="3.5" height="34" rx="1.5" fill="#F8FAFC" stroke="#0284C7" stroke-width="1"/>
+        <rect x="55" y="18" width="3.5" height="34" rx="1.5" fill="#F8FAFC" stroke="#0284C7" stroke-width="1"/>
+        <circle cx="32" cy="22" r="3" fill="#FACC15"/>
+        <polygon points="32,1 27,9 37,9" fill="#EF4444"/>
+      `;
+    } else if (type === 'kapal_sumber_01') {
+      return `
+        <path d="M32 2 C44 14 46 44 43 59 L21 59 C18 44 20 14 32 2 Z" fill="#0F766E" stroke="#FFFFFF" stroke-width="2"/>
+        <path d="M32 6 C41 16 43 42 40 56 L24 56 C21 42 23 16 32 6 Z" fill="#0284C7"/>
+        <rect x="24" y="20" width="16" height="22" rx="3" fill="#F8FAFC" stroke="#0F172A" stroke-width="1.5"/>
+        <rect x="26" y="22" width="12" height="6" rx="1" fill="#0284C7"/>
+        <rect x="25" y="46" width="14" height="7" rx="1.5" fill="#FACC15"/>
+        <text x="32" y="51.5" fill="#0F172A" font-size="5" font-weight="900" text-anchor="middle" font-family="sans-serif">S-01</text>
+        <polygon points="32,0 26,8 38,8" fill="#EF4444"/>
+      `;
     }
     // Katir (default)
     return `
@@ -408,8 +446,8 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
 
   return (
     <div className="relative w-full h-[calc(100vh-4.5rem)] bg-slate-950 overflow-hidden flex flex-col">
-      {/* 1. TOP STATUS & HUD BAR */}
-      <div className="absolute top-2 left-2 right-2 z-[400] flex flex-col gap-1.5 pointer-events-none">
+      {/* 1. TOP STATUS & HUD BAR (Offset with safe area margin to avoid notch / mobile status bar overlap) */}
+      <div className="absolute top-2.5 sm:top-3 left-2 right-2 z-[400] flex flex-col gap-1.5 pointer-events-none">
         {/* Real-time Maritime HUD metrics */}
         <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl p-2.5 shadow-2xl flex items-center justify-between text-white">
           {/* Speed & Heading */}
@@ -435,8 +473,22 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
             </div>
           </div>
 
-          {/* Quick HUD Action Buttons */}
+          {/* Quick HUD Action Buttons: Sailing Mode, Voice, Explorer */}
           <div className="flex items-center gap-1.5">
+            {/* Sailing Mode (Mode Berlayar) Button */}
+            <button
+              onClick={onToggleSailingMode}
+              title={isSailingMode ? 'Keluar Mode Berlayar' : 'Mulai Mode Berlayar'}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg font-bold text-xs tracking-wide shadow-lg active:scale-95 transition border ${
+                isSailingMode
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 border-amber-300 ring-2 ring-amber-400/50 animate-pulse'
+                  : 'bg-blue-600/80 hover:bg-blue-600 text-white border-blue-400'
+              }`}
+            >
+              {isSailingMode ? <Square className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current" />}
+              <span>{isSailingMode ? 'BERLAYAR' : 'BERLAYAR'}</span>
+            </button>
+
             {/* Voice toggle */}
             <button
               onClick={onToggleVoice}
@@ -457,7 +509,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600/80 hover:bg-emerald-600 border border-emerald-400 text-white font-bold text-xs tracking-wide shadow-lg active:scale-95 transition"
             >
               <Maximize2 className="w-4 h-4" />
-              <span>EXPLORER</span>
+              <span className="hidden sm:inline">EXPLORER</span>
             </button>
           </div>
         </div>
@@ -519,10 +571,15 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
             <span>{gpsErrorMessage || 'GPS tidak aktif. Aktifkan lokasi di pengaturan HP.'}</span>
           </div>
         )}
+
+        {/* Hint banner: Ketuk 2 kali di peta untuk tambah titik */}
+        <div className="pointer-events-auto self-center bg-slate-900/75 border border-slate-700/60 text-slate-300 text-[10px] px-2.5 py-0.5 rounded-full backdrop-blur-sm">
+          💡 Tips: <strong>Ketuk 2x di peta</strong> untuk tandai titik rumpon baru
+        </div>
       </div>
 
       {/* 2. WATERMARK ON TOP-RIGHT OF MAP (Opacity 30%, small text) */}
-      <div className="absolute top-3 right-3 z-[410] pointer-events-none select-none">
+      <div className="absolute top-4 right-3 z-[410] pointer-events-none select-none">
         <span className="text-[11px] font-mono tracking-widest text-white/30 uppercase font-black px-1.5 py-0.5 rounded bg-black/10">
           ISWANDI
         </span>
@@ -532,7 +589,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       <div ref={mapContainerRef} className="w-full h-full z-0 bg-slate-900" />
 
       {/* 4. MAP FLOATING CONTROLS (Right side: Layer toggle, Recenter, Zoom, Quick Point) */}
-      <div className="absolute bottom-20 right-3 z-[400] flex flex-col gap-2">
+      <div className="absolute bottom-24 right-3 z-[400] flex flex-col gap-2">
         {/* Layer Switcher Menu */}
         <div className="relative">
           <button
@@ -633,35 +690,131 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
         {/* Quick Mark Point at Ship GPS Button */}
         <button
           onClick={onQuickAddWaypoint}
-          className="w-11 h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black border border-amber-300 shadow-xl flex items-center justify-center active:scale-90 transition shadow-amber-500/20"
+          className="w-11 h-11 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black border border-cyan-300 shadow-xl flex items-center justify-center active:scale-90 transition shadow-cyan-500/20"
           title="Tandai Rumpon / Titik Cepat di Sini"
         >
           <MapPin className="w-6 h-6 fill-current" />
         </button>
       </div>
 
-      {/* 5. BOTTOM BAR: COORDINATES & TARGET SELECTION */}
-      <div className="absolute bottom-2 left-2 right-16 z-[400] flex items-center gap-2">
-        <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 shadow-xl text-white text-xs flex-1 flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-              Koordinat Kapal
-            </span>
-            <span className="font-mono text-cyan-300 font-bold text-xs truncate block max-w-[200px]">
-              {position
-                ? formatCoordinates(position.lat, position.lng, settings.coordinateFormat)
-                : 'Mencari satelit...'}
-            </span>
+      {/* 5. FLOATING "+" BUTTON DI POJOK KIRI BAWAH: TAMBAH MANUAL TITIK */}
+      <div className="absolute bottom-24 left-3 z-[400]">
+        <button
+          onClick={() => onManualAddWaypoint()}
+          className="w-12 h-12 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black border-2 border-amber-300 shadow-2xl flex items-center justify-center active:scale-90 transition shadow-amber-500/30"
+          title="Tambah Manual Titik Koordinat"
+        >
+          <Plus className="w-7 h-7 stroke-[3]" />
+        </button>
+      </div>
+
+      {/* 6. BOTTOM TELEMETRY BAR: SAILING MODE / COORDINATES */}
+      {isSailingMode ? (
+        /* SAILING TELEMETRY HUD (Kecepatan, Jarak Ditempuh, Derajat, Estimasi, Sisa Jarak) */
+        <div className="absolute bottom-2 left-2 right-2 z-[400] bg-slate-950/95 border-2 border-amber-500/80 rounded-2xl p-2.5 shadow-2xl backdrop-blur-md text-white animate-in slide-in-from-bottom-2">
+          {/* Header sailing mode */}
+          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 mb-2">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+                MODE BERLAYAR AKTIF
+              </span>
+              {targetCalc.target && (
+                <span className="text-[11px] text-slate-300 font-semibold truncate max-w-[150px]">
+                  • Menuju {targetCalc.target.name}
+                </span>
+              )}
+            </div>
+
+            <button
+              onClick={onToggleSailingMode}
+              className="px-2.5 py-1 rounded-lg bg-rose-900/80 hover:bg-rose-800 text-rose-200 border border-rose-600 font-bold text-[11px] active:scale-95 transition"
+            >
+              Akhiri Berlayar
+            </button>
           </div>
 
-          <button
-            onClick={onOpenTargetPicker}
-            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow border border-blue-400 active:scale-95 transition shrink-0 ml-2"
-          >
-            {targetCalc.target ? 'Ganti Target' : 'Pilih Target'}
-          </button>
+          {/* 5 Requested Telemetry Metrics */}
+          <div className="grid grid-cols-5 gap-1.5 text-center">
+            {/* 1. Kecepatan */}
+            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                Kecepatan
+              </span>
+              <span className="text-sm sm:text-base font-black text-amber-400 font-mono">
+                {formatSpeed(position?.speedKnots ?? 0, settings.speedUnit)}
+              </span>
+            </div>
+
+            {/* 2. Jarak Ditempuh */}
+            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                Ditempuh
+              </span>
+              <span className="text-sm sm:text-base font-black text-cyan-300 font-mono">
+                {formatDistance(tripDistanceNmi, settings.distanceUnit)}
+              </span>
+            </div>
+
+            {/* 3. Derajat (Haluan COG) */}
+            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                Derajat
+              </span>
+              <span className="text-sm sm:text-base font-black text-white font-mono">
+                {position?.heading !== null && position?.heading !== undefined
+                  ? `${Math.round(position.heading)}°`
+                  : '---°'}
+              </span>
+            </div>
+
+            {/* 4. Estimasi (ETA) */}
+            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                Estimasi
+              </span>
+              <span className="text-xs sm:text-sm font-black text-amber-200 font-mono truncate block">
+                {targetCalc.etaTimeFormatted || '--'}
+              </span>
+            </div>
+
+            {/* 5. Sisa Jarak */}
+            <div className="bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+              <span className="text-[9px] uppercase font-bold text-slate-400 block truncate">
+                Sisa Jarak
+              </span>
+              <span className="text-sm sm:text-base font-black text-emerald-400 font-mono truncate block">
+                {targetCalc.target
+                  ? formatDistance(targetCalc.distanceNmi, settings.distanceUnit)
+                  : '--'}
+              </span>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        /* STANDARD BOTTOM BAR: COORDINATES & TARGET SELECTION */
+        <div className="absolute bottom-2 left-2 right-16 z-[400] flex items-center gap-2">
+          <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl px-3 py-2 shadow-xl text-white text-xs flex-1 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">
+                Koordinat Kapal
+              </span>
+              <span className="font-mono text-cyan-300 font-bold text-xs truncate block max-w-[200px]">
+                {position
+                  ? formatCoordinates(position.lat, position.lng, settings.coordinateFormat)
+                  : 'Mencari satelit...'}
+              </span>
+            </div>
+
+            <button
+              onClick={onOpenTargetPicker}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow border border-blue-400 active:scale-95 transition shrink-0 ml-2"
+            >
+              {targetCalc.target ? 'Ganti Target' : 'Pilih Target'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
