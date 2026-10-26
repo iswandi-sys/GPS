@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Leaflet Container & Markers */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background-color: #020617 !important;
+  font-family: inherit;
+}
+
+.boat-marker-icon {
+  background: transparent !important;
+  border: none !important;
+}
+
+.wp-marker-custom {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Custom scrollbar hiding for horizontal pills */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Touch feedback and mobile tap highlight prevention */
+* {
+  -webkit-tap-highlight-color: transparent;
+}

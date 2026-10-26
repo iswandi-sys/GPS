@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="oceanBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#0369A1" />
+    </linearGradient>
+    <linearGradient id="goldAcc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+  </defs>
+
+  <!-- Circular background with padding for maskable safe-zone -->
+  <rect width="512" height="512" rx="128" fill="url(#oceanBg)" />
+
+  <!-- Compass Outer Ring -->
+  <circle cx="256" cy="256" r="170" fill="none" stroke="#38BDF8" stroke-width="6" opacity="0.4" />
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#FFFFFF" stroke-width="4" opacity="0.6" stroke-dasharray="8 8" />
+
+  <!-- Cardinal points -->
+  <polygon points="256,76 268,126 244,126" fill="#EF4444" />
+  <polygon points="256,436 268,386 244,386" fill="#FFFFFF" opacity="0.8" />
+  <polygon points="436,256 386,268 386,244" fill="#FFFFFF" opacity="0.8" />
+  <polygon points="76,256 126,268 126,244" fill="#FFFFFF" opacity="0.8" />
+
+  <!-- Center Anchor Emblem -->
+  <!-- Anchor Ring -->
+  <circle cx="256" cy="180" r="28" fill="none" stroke="url(#goldAcc)" stroke-width="14" />
+  <!-- Anchor Shaft -->
+  <line x1="256" y1="208" x2="256" y2="350" stroke="url(#goldAcc)" stroke-width="16" stroke-linecap="round" />
+  <!-- Crossbar -->
+  <line x1="190" y1="235" x2="322" y2="235" stroke="url(#goldAcc)" stroke-width="14" stroke-linecap="round" />
+  <circle cx="190" cy="235" r="9" fill="url(#goldAcc)" />
+  <circle cx="322" cy="235" r="9" fill="url(#goldAcc)" />
+
+  <!-- Flukes / Curved Arms -->
+  <path d="M160 300 C 160 390, 352 390, 352 300" fill="none" stroke="url(#goldAcc)" stroke-width="18" stroke-linecap="round" />
+  <!-- Fluke tips -->
+  <polygon points="160,285 140,315 178,315" fill="url(#goldAcc)" />
+  <polygon points="352,285 334,315 372,315" fill="url(#goldAcc)" />
+
+  <!-- Nautical Star in Center -->
+  <polygon points="256,230 264,248 284,256 264,264 256,282 248,264 228,256 248,248" fill="#FFFFFF" />
+</svg>

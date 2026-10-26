@@ -1,0 +1,91 @@
+name: Build Android APK - NAVIGASI LAUT SR
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Initialize Capacitor Android
+        run: |
+          npm install @capacitor/core @capacitor/android @capacitor/cli
+          npx cap add android || true
+          npx cap sync android
+
+      - name: Grant Execute Permission for Gradlew
+        run: |
+          cd android
+          chmod +x gradlew
+
+      - name: Build Android APK (Debug / Standalone)
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK Output
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk ./NavigasiLautSR-v1.0.0.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NavigasiLautSR-Android-APK
+          path: NavigasiLautSR-v1.0.0.apk
+          if-no-files-found: error
+
+      - name: Create GitHub Release with APK Download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-build-${{ github.run_number }}
+          name: "NAVIGASI LAUT SR - Unduh APK v1.0.0 (${{ github.run_number }})"
+          body: |
+            ## 🚢 NAVIGASI LAUT SR - APK Android Nelayan
+
+            Aplikasi navigasi maritim offline khusus nelayan wilayah Sulawesi, Nusa Tenggara, dan perairan sekitarnya.
+
+            ### 📥 Tautan Unduh Berkas APK:
+            Unduh file **NavigasiLautSR-v1.0.0.apk** di bawah ini dan pasang pada HP Android Anda.
+
+            ### ✨ Fitur Unggulan:
+            - **Navigasi GPS Maritim:** Kecepatan (Knot), Haluan (COG), Arah Target (Bearing), Selisih Sudut Kemudi, dan Jarak (NMi).
+            - **Peta Offline Nyata:** Sistem penyimpanan tile lokal mandiri di memori HP untuk perairan Sulawesi & Nusa Tenggara.
+            - **Explorer Mode:** HUD kontras tinggi layar penuh dengan angka besar yang terbaca di bawah terik matahari laut.
+            - **Titik Saya:** Tandai rumpon, karang dangkal, pelabuhan, dan spot ikan dengan foto kamera & koordinat DD/DMS.
+            - **Cuaca Laut Maritim:** Tinggi & arah gelombang, kecepatan angin, suhu air laut, dan prakiraan 3 hari tersimpan offline.
+            - **Panduan Suara Nelayan:** Koreksi arah haluan kapal otomatis dalam Bahasa Indonesia.
+            - **Berbagi Lokasi Tanpa Server:** Ekspor & impor file GPX 1.1, GeoJSON, dan JSON.
+          files: NavigasiLautSR-v1.0.0.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

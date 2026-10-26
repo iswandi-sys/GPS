@@ -1,0 +1,9 @@
+{
+  "appId": "com.navigasilaut.sr",
+  "appName": "NAVIGASI LAUT SR",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "NAVIGASI LAUT SR",
+  "description": "Aplikasi navigasi maritim offline khusus nelayan wilayah Sulawesi, Nusa Tenggara, dan sekitarnya.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
+
